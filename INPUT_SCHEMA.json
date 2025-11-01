@@ -1,1 +1,23 @@
-
+{
+  "title": "Facebook Ads Scraper - Input schema",
+  "type": "object",
+  "properties": {
+    "keyword": {
+      "type": "string",
+      "title": "Keyword",
+      "description": "Produto / termo de pesquisa"
+    },
+    "country": {
+      "type": "string",
+      "title": "Country",
+      "default": "ALL",
+      "description": "ISO2 country code (ES, IT, RO) or ALL"
+    },
+    "maxResults": {
+      "type": "integer",
+      "title": "Max results",
+      "default": 50
+    }
+  },
+  "required": ["keyword"]
+}
