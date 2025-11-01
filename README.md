@@ -1,1 +1,0 @@
-# facebook-ads-scraper-dynamic
