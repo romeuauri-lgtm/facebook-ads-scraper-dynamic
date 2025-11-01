@@ -1,15 +1,22 @@
 {
   "name": "facebook-ads-scraper-dynamic",
   "version": "1.0.0",
-  "description": "Apify actor: scrape Facebook Ads Library by keyword (dynamic)",
+  "description": "Dynamic Facebook Ads Library scraper for product validation automation.",
+  "type": "module",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "test": "node main.js --test"
   },
   "dependencies": {
-    "apify": "^2.4.0"
+    "apify": "^3.1.0",
+    "playwright": "^1.48.0",
+    "axios": "^1.7.3",
+    "cheerio": "^1.0.0-rc.12"
   },
   "engines": {
-    "node": "18.x"
-  }
+    "node": ">=20.0.0"
+  },
+  "author": "romeuauri-lgtm",
+  "license": "MIT"
 }
