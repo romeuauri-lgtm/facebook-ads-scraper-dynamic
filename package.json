@@ -1,1 +1,15 @@
-
+{
+  "name": "facebook-ads-scraper-dynamic",
+  "version": "1.0.0",
+  "description": "Apify actor: scrape Facebook Ads Library by keyword (dynamic)",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "apify": "^2.4.0"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
