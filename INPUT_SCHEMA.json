@@ -6,13 +6,15 @@
     "keyword": {
       "type": "string",
       "title": "Keyword",
-      "description": "Produto / termo de pesquisa"
+      "description": "Produto / termo de pesquisa",
+      "editor": "textfield"
     },
     "country": {
       "type": "string",
       "title": "Country",
       "default": "ALL",
-      "description": "ISO2 country code (ES, IT, RO) or ALL"
+      "description": "ISO2 country code (ES, IT, RO) or ALL",
+      "editor": "textfield"
     },
     "maxResults": {
       "type": "integer",
