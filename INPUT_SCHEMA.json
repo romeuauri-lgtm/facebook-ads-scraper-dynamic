@@ -1,26 +1,46 @@
 {
   "schemaVersion": 1,
   "title": "Facebook Ads Scraper - Input schema",
+  "description": "Define os parâmetros para a execução do Facebook Ads Scraper dinâmico. Use para buscar anúncios ativos relacionados a produtos na Meta Ads Library.",
   "type": "object",
   "properties": {
     "keyword": {
-      "type": "string",
       "title": "Keyword",
-      "description": "Produto / termo de pesquisa",
+      "type": "string",
+      "description": "Nome do produto ou termo de pesquisa exato a ser usado na Meta Ads Library.",
+      "prefill": "massage gun",
       "editor": "textfield"
     },
     "country": {
-      "type": "string",
       "title": "Country",
+      "type": "string",
+      "description": "Código ISO2 do país (ex: ES, IT, RO) ou ALL para busca global.",
       "default": "ALL",
-      "description": "ISO2 country code (ES, IT, RO) or ALL",
       "editor": "textfield"
     },
     "maxResults": {
-      "type": "integer",
       "title": "Max results",
-      "default": 50
+      "type": "integer",
+      "description": "Número máximo de anúncios a coletar da biblioteca de anúncios.",
+      "default": 50,
+      "minimum": 1,
+      "maximum": 500
+    },
+    "adType": {
+      "title": "Ad Type",
+      "type": "string",
+      "description": "Tipo de anúncio a buscar (ALL, ACTIVE, INACTIVE).",
+      "default": "ACTIVE",
+      "enum": ["ALL", "ACTIVE", "INACTIVE"]
+    },
+    "language": {
+      "title": "Language",
+      "type": "string",
+      "description": "Idioma preferido dos anúncios (opcional).",
+      "default": "es",
+      "editor": "textfield"
     }
   },
-  "required": ["keyword"]
+  "required": ["keyword"],
+  "additionalProperties": false
 }
