@@ -36,8 +36,22 @@
     "language": {
       "title": "Language",
       "type": "string",
-      "description": "Idioma preferido dos anúncios (opcional).",
-      "default": "es",
+      "description": "Idioma preferido dos anúncios (exemplo: en, es, fr, pt).",
+      "default": "en",
+      "editor": "textfield"
+    },
+    "startDate": {
+      "title": "Start Date",
+      "type": "string",
+      "description": "Data de início para filtrar anúncios (formato YYYY-MM-DD).",
+      "default": "2018-01-01",
+      "editor": "textfield"
+    },
+    "endDate": {
+      "title": "End Date",
+      "type": "string",
+      "description": "Data de fim para filtrar anúncios (formato YYYY-MM-DD). Por padrão, é a data atual.",
+      "default": "",
       "editor": "textfield"
     }
   },
