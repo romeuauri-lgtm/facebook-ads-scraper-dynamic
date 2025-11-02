@@ -65,8 +65,22 @@ const handlePage = async ({ page, request }) => {
                         const mediaEls = Array.from(n.querySelectorAll('img[src], video[src]'));
                         const media = mediaEls.map(m => m.src).filter(Boolean);
 
-                        const pageNameEl = n.querySelector('a[href*="/pages/"], a[href*="/pg/"], [aria-label*="Page"]');
-                        const pageName = pageNameEl ? pageNameEl.innerText.trim() : null;
+                        // Captura robusta do nome da página
+                        let pageName = null;
+                        const pageSelectors = [
+                            'a[href*="/pages/"]',
+                            'a[href*="/pg/"]',
+                            '[aria-label*="Page"]',
+                            'div[role="link"] > span',
+                            'strong'
+                        ];
+                        for (const ps of pageSelectors) {
+                            const el = n.querySelector(ps);
+                            if (el && el.innerText.trim()) {
+                                pageName = el.innerText.trim();
+                                break;
+                            }
+                        }
 
                         const snapshotEl = n.querySelector('a[href*="/ads/library/"]');
                         const snapshot = snapshotEl ? snapshotEl.href : null;
