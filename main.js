@@ -1,5 +1,5 @@
 import { Actor } from 'apify';
-import { RequestQueue, BasicCrawler, launchPuppeteer } from 'crawlee';
+import { PlaywrightCrawler, RequestQueue } from 'crawlee';
 
 await Actor.init();
 
@@ -14,7 +14,7 @@ if (!keyword) {
     await Actor.exit({ exitCode: 1 });
 }
 
-// build Facebook Ads Library search URL
+// Build Facebook Ads Library search URL
 const searchUrl = `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all`;
 
 console.log(`Searching Facebook Ads Library for: "${keyword}" country=${country}`);
@@ -23,10 +23,10 @@ console.log('Search URL:', searchUrl);
 const requestQueue = await RequestQueue.open();
 await requestQueue.addRequest({ url: searchUrl });
 
-const handlePageFunction = async ({ page, request }) => {
-    console.log('Processing', request.url);
-
-    await page.waitForTimeout(1500);
+// Handler principal
+const handlePage = async ({ page, request, log }) => {
+    log.info(`Processing ${request.url}`);
+    await page.waitForTimeout(2000);
 
     const possibleSelectors = [
         'div[role="article"]',
@@ -40,7 +40,7 @@ const handlePageFunction = async ({ page, request }) => {
         try {
             found = await page.$(sel) !== null;
             if (found) break;
-        } catch (e) { /* ignore */ }
+        } catch {}
     }
 
     let collected = [];
@@ -56,14 +56,14 @@ const handlePageFunction = async ({ page, request }) => {
                     const linkEl = n.querySelector('a[href*="/ads/library/"]') || (n.tagName === 'A' && n.href ? n : null);
                     const snapshot = linkEl ? linkEl.href : null;
 
-                    const titleEl = n.querySelector('h3') || n.querySelector('strong') || n.querySelector('[role="heading"]');
+                    const titleEl = n.querySelector('h3, strong, [role="heading"]');
                     const title = titleEl ? titleEl.innerText.trim() : null;
 
-                    const txtEl = n.querySelector('div[dir="auto"]') || n.querySelector('p') || n;
+                    const txtEl = n.querySelector('div[dir="auto"], p, span');
                     const text = txtEl ? txtEl.innerText.trim().slice(0, 800) : null;
 
                     let pageName = null;
-                    const pageEl = n.querySelector('a[href*="/pages/"], a[href*="/pg/"]') || n.querySelector('[aria-label*="Page"]');
+                    const pageEl = n.querySelector('a[href*="/pages/"], a[href*="/pg/"], [aria-label*="Page"]');
                     if (pageEl) pageName = pageEl.innerText.trim();
 
                     const imgs = Array.from(n.querySelectorAll('img')).map(i => i.src).filter(Boolean);
@@ -73,7 +73,7 @@ const handlePageFunction = async ({ page, request }) => {
                         seen.add(key);
                         ads.push({ snapshot, title, text, pageName, media: imgs });
                     }
-                } catch (e) {}
+                } catch {}
             });
             return ads;
         });
@@ -87,7 +87,7 @@ const handlePageFunction = async ({ page, request }) => {
             if (collected.length >= maxResults) break;
         }
 
-        await page.evaluate('window.scrollBy(0, window.innerHeight)');
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight));
         await page.waitForTimeout(1200);
 
         const newHeight = await page.evaluate(() => document.body.scrollHeight);
@@ -95,13 +95,11 @@ const handlePageFunction = async ({ page, request }) => {
         lastHeight = newHeight;
     }
 
-    let index = 0;
-    for (const ad of collected.slice(0, maxResults)) {
-        index++;
+    for (const [index, ad] of collected.slice(0, maxResults).entries()) {
         await Actor.pushData({
             keyword,
             country,
-            rank: index,
+            rank: index + 1,
             snapshot_url: ad.snapshot,
             title: ad.title,
             text: ad.text,
@@ -112,31 +110,27 @@ const handlePageFunction = async ({ page, request }) => {
         });
     }
 
-    console.log(`Pushed ${collected.slice(0, maxResults).length} items`);
+    log.info(`Pushed ${collected.length} ads.`);
 };
 
-const crawler = new BasicCrawler({
+// Crawler Playwright (substitui BasicCrawler + launchPuppeteer)
+const crawler = new PlaywrightCrawler({
     requestQueue,
     maxConcurrency: 1,
-    handleRequestFunction: async ({ request }) => {
-        const browser = await launchPuppeteer({ headless: true, stealth: true });
-        const page = await browser.newPage();
-
-        await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36');
-
-        try {
-            await page.goto(request.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            await page.waitForTimeout(3000);
-            await handlePageFunction({ page, request });
-        } catch (err) {
-            console.error('Page error', err);
-        } finally {
-            await browser.close();
+    launchContext: {
+        launchOptions: {
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage'
+            ]
         }
     },
-    handleFailedRequestFunction: async ({ request }) => {
-        console.log(`Request ${request.url} failed too many times.`);
-    },
+    requestHandler: handlePage,
+    failedRequestHandler: async ({ request, log }) => {
+        log.error(`Request ${request.url} failed after multiple retries.`);
+    }
 });
 
 await crawler.run();
