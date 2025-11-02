@@ -4,53 +4,75 @@ import { PlaywrightCrawler, RequestQueue, log } from 'crawlee';
 await Actor.init();
 
 const input = await Actor.getInput() || {};
-const keyword = (input.keyword || '').trim();
+const rawKeywords = input.keyword;
 const country = (input.country || 'ALL').toUpperCase();
 const maxResults = parseInt(input.maxResults || 50, 10);
-
-// Novos parâmetros configuráveis
 const adType = (input.adType || 'ACTIVE').toUpperCase();
 const language = (input.language || 'en').toLowerCase();
-
-// Datas de filtragem
 const startDate = input.startDate || '2018-01-01';
 const endDate = input.endDate || new Date().toISOString().split('T')[0];
+const maxKeywordTries = parseInt(input.maxKeywordTries || 5, 10);
 
-if (!keyword) {
+// Normaliza as keywords (pode ser string única ou array)
+let keywords = [];
+if (Array.isArray(rawKeywords)) {
+    keywords = rawKeywords.slice(0, maxKeywordTries);
+} else if (typeof rawKeywords === 'string' && rawKeywords.trim()) {
+    keywords = [rawKeywords.trim()];
+}
+
+if (keywords.length === 0) {
     log.error('❌ No keyword provided - exiting.');
     await Actor.setValue('ERROR', { message: 'keyword is required' });
     await Actor.exit({ exitCode: 1 });
 }
 
-// Construir URL de busca com todos os filtros
-const searchUrl = `https://www.facebook.com/ads/library/?active_status=${adType}&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all&language=${language}&start_date=${startDate}&end_date=${endDate}`;
-
-log.info(`🔍 Searching Facebook Ads Library for: "${keyword}" (country=${country}, adType=${adType}, language=${language}, from=${startDate} to=${endDate})`);
-log.info(`Search URL: ${searchUrl}`);
-
 const requestQueue = await RequestQueue.open();
-await requestQueue.addRequest({ url: searchUrl });
+
+for (const keyword of keywords) {
+    const searchUrl = `https://www.facebook.com/ads/library/?active_status=${adType}&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all&language=${language}&start_date=${startDate}&end_date=${endDate}`;
+    log.info(`🔍 Searching Facebook Ads Library for: "${keyword}" (country=${country}, adType=${adType}, language=${language}, from=${startDate} to=${endDate})`);
+    log.info(`Search URL: ${searchUrl}`);
+    await requestQueue.addRequest({ url: searchUrl, userData: { keyword } });
+}
 
 // Função de tratamento da página
 const handlePage = async ({ page, request }) => {
+    const { keyword } = request.userData;
     log.info(`Processing ${request.url}`);
 
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(4000);
 
-    // Espera até que blocos de anúncio possíveis existam
-    await page.waitForSelector('div.x1lliihq', { timeout: 30000 }).catch(() => {
-        log.warning('⚠️ No ad containers found with default selector.');
-    });
+    // Espera seletor principal ou alternativo
+    const selectors = [
+        'div.x1lliihq.x6ikm8r.x10wlt62',
+        'div[role="article"]',
+        'div.x1lliihq'
+    ];
+
+    let foundSelector = null;
+    for (const sel of selectors) {
+        const exists = await page.$(sel);
+        if (exists) {
+            foundSelector = sel;
+            break;
+        }
+    }
+
+    if (!foundSelector) {
+        log.warning('⚠️ Nenhum seletor de anúncio detectado, tentando mesmo assim...');
+    } else {
+        log.info(`✅ Usando seletor: ${foundSelector}`);
+    }
 
     let collected = [];
     let lastHeight = await page.evaluate(() => document.body.scrollHeight);
 
-    // rolar e coletar anúncios
-    for (let scroll = 0; scroll < 10 && collected.length < maxResults; scroll++) {
-        const ads = await page.evaluate(() => {
+    for (let scroll = 0; scroll < 12 && collected.length < maxResults; scroll++) {
+        const ads = await page.evaluate((sel) => {
             const items = [];
-            const nodes = document.querySelectorAll('div.x1lliihq.x6ikm8r.x10wlt62');
+            const nodes = document.querySelectorAll(sel || 'div.x1lliihq');
 
             nodes.forEach((el) => {
                 try {
@@ -75,13 +97,10 @@ const handlePage = async ({ page, request }) => {
                             snapshot
                         });
                     }
-                } catch (err) {
-                    // falhar silenciosamente em casos de erro no elemento
-                }
+                } catch (err) {}
             });
-
             return items;
-        });
+        }, foundSelector);
 
         for (const ad of ads) {
             if (!collected.find(a => a.text === ad.text && a.pageName === ad.pageName)) {
@@ -90,7 +109,7 @@ const handlePage = async ({ page, request }) => {
         }
 
         await page.evaluate(() => window.scrollBy(0, window.innerHeight * 1.5));
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(2000);
 
         const newHeight = await page.evaluate(() => document.body.scrollHeight);
         if (newHeight === lastHeight) break;
@@ -98,6 +117,18 @@ const handlePage = async ({ page, request }) => {
     }
 
     collected = collected.slice(0, maxResults);
+
+    if (collected.length === 0) {
+        log.warning(`⚠️ Nenhum anúncio encontrado para "${keyword}".`);
+        await Actor.pushData({
+            keyword,
+            status: 'no_results',
+            message: 'No ads found for this keyword.',
+            timestamp: new Date().toISOString(),
+            source_url: request.url
+        });
+        return;
+    }
 
     for (const [index, ad] of collected.entries()) {
         await Actor.pushData({
