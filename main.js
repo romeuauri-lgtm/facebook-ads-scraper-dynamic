@@ -5,14 +5,16 @@ await Actor.init();
 
 const input = await Actor.getInput() || {};
 let keywords = input.keyword;
-if (!keywords) {
+if (!keywords || (Array.isArray(keywords) && keywords.length === 0)) {
     log.error('❌ No keyword provided - exiting.');
     await Actor.setValue('ERROR', { message: 'keyword is required' });
     await Actor.exit({ exitCode: 1 });
 }
 
-// Garantir que keywords seja array
-if (!Array.isArray(keywords)) keywords = [keywords];
+// Normaliza keywords para array
+if (typeof keywords === 'string') keywords = [keywords];
+const maxKeywordTries = parseInt(input.maxKeywordTries || 5, 10);
+keywords = keywords.slice(0, maxKeywordTries);
 
 const country = (input.country || 'ALL').toUpperCase();
 const maxResults = parseInt(input.maxResults || 50, 10);
@@ -20,27 +22,24 @@ const adType = (input.adType || 'ACTIVE').toUpperCase();
 const language = (input.language || 'en').toLowerCase();
 const startDate = input.startDate || '2018-01-01';
 const endDate = input.endDate || new Date().toISOString().split('T')[0];
-const maxKeywordTries = parseInt(input.maxKeywordTries || 5, 10);
 
-// Abre fila de requests
 const requestQueue = await RequestQueue.open();
 
-for (let k = 0; k < Math.min(keywords.length, maxKeywordTries); k++) {
-    const keyword = keywords[k].trim();
+for (const keyword of keywords) {
     const searchUrl = `https://www.facebook.com/ads/library/?active_status=${adType}&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all&language=${language}&start_date=${startDate}&end_date=${endDate}`;
-    await requestQueue.addRequest({ url: searchUrl, userData: { keyword } });
     log.info(`🔍 Added search request for keyword "${keyword}"`);
+    await requestQueue.addRequest({ url: searchUrl, userData: { keyword } });
 }
 
-// Função principal
+// Função de tratamento da página
 const handlePage = async ({ page, request }) => {
     const keyword = request.userData.keyword;
     log.info(`Processing ${request.url} (keyword="${keyword}")`);
 
     await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
-    // Seletor múltiplo para anúncios
+    // Seletores possíveis de anúncios
     const adSelectors = [
         'div[role="article"]',
         'div[data-testid*="ad"]',
@@ -50,43 +49,44 @@ const handlePage = async ({ page, request }) => {
 
     let collected = [];
     let lastHeight = await page.evaluate(() => document.body.scrollHeight);
-    const maxScrollAttempts = 20;
 
-    for (let scroll = 0; scroll < maxScrollAttempts && collected.length < maxResults; scroll++) {
+    for (let scroll = 0; scroll < 15 && collected.length < maxResults; scroll++) {
         const ads = await page.evaluate((selectors) => {
             const items = [];
             const seenKeys = new Set();
 
             selectors.forEach(sel => {
-                const nodes = document.querySelectorAll(sel);
-                nodes.forEach((el) => {
+                const nodes = Array.from(document.querySelectorAll(sel));
+                nodes.forEach(n => {
                     try {
-                        const text = el.innerText?.trim() || null;
+                        const textEl = n.querySelector('div[dir="auto"], p, span');
+                        const text = textEl ? textEl.innerText.trim() : '';
 
-                        const mediaEls = el.querySelectorAll('img[src]');
-                        const media = Array.from(mediaEls).map(i => i.src);
+                        const mediaEls = Array.from(n.querySelectorAll('img[src], video[src]'));
+                        const media = mediaEls.map(m => m.src).filter(Boolean);
 
-                        let pageName = null;
-                        const pageEl = el.querySelector('a[href*="/pages/"], a[href*="/pg/"], [aria-label*="Page"]');
-                        if (pageEl) pageName = pageEl.innerText?.trim() || null;
+                        const pageNameEl = n.querySelector('a[href*="/pages/"], a[href*="/pg/"], [aria-label*="Page"]');
+                        const pageName = pageNameEl ? pageNameEl.innerText.trim() : null;
 
-                        const snapshot = el.querySelector('a[href*="facebook.com/ads/library/"]')?.href || null;
+                        const snapshotEl = n.querySelector('a[href*="/ads/library/"]');
+                        const snapshot = snapshotEl ? snapshotEl.href : null;
 
-                        const key = snapshot || text || (media[0] || '');
-                        if (key && !seenKeys.has(key)) {
-                            seenKeys.add(key);
+                        const key = text || snapshot || (media[0] || '');
+                        if (!key || seenKeys.has(key)) return;
+                        seenKeys.add(key);
+
+                        if (text || media.length) {
                             items.push({ text, media, pageName, snapshot });
                         }
-                    } catch (err) {}
+                    } catch {}
                 });
             });
 
             return items;
         }, adSelectors);
 
-        // Deduplicar resultados
         for (const ad of ads) {
-            if (!collected.find(a => a.snapshot === ad.snapshot)) {
+            if (!collected.find(a => a.text === ad.text && a.pageName === ad.pageName)) {
                 collected.push(ad);
             }
         }
@@ -126,7 +126,6 @@ const handlePage = async ({ page, request }) => {
 const crawler = new PlaywrightCrawler({
     requestQueue,
     maxConcurrency: 1,
-    requestHandlerTimeoutSecs: 600,
     launchContext: {
         launchOptions: {
             headless: true,
@@ -139,7 +138,7 @@ const crawler = new PlaywrightCrawler({
     },
     requestHandler: handlePage,
     failedRequestHandler: async ({ request, error }) => {
-        log.error(`❌ Request failed for ${request.url}: ${error.message}`);
+        log.error(`❌ Request failed for ${request.url}: ${error?.message || error}`);
     }
 });
 
