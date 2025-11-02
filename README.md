@@ -42,3 +42,30 @@ Durante a execução:
   "startDate": "2019-01-01",
   "endDate": "2025-11-02"
 }
+
+📦 Saída (dataset)
+
+Cada item contém:
+
+Campo	Descrição
+keyword	Palavra-chave usada na busca
+country	País alvo
+rank	Posição do anúncio no resultado
+page_name	Nome da página anunciante
+text	Texto principal do anúncio
+media	Lista de URLs de imagens/vídeos do anúncio
+snapshot_url	Link direto para o anúncio na biblioteca
+scraped_at	Data e hora da coleta
+source_url	URL completa da pesquisa executada
+⚠️ Notas importantes
+
+O scraper depende da estrutura atual da Facebook Ads Library, que pode mudar com o tempo.
+
+Se poucos anúncios forem encontrados, tente alterar o país, data ou tipo de anúncio.
+
+Use maxResults moderados (≤100) para melhor desempenho e estabilidade.
+
+🧑‍💻 Autor
+
+Desenvolvido por @romeuauri-lgtm
+Deploy e automação: Apify Actor + Crawlee + Playwright
