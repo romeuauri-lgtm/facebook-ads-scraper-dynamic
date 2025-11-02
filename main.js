@@ -8,38 +8,49 @@ const keyword = (input.keyword || '').trim();
 const country = (input.country || 'ALL').toUpperCase();
 const maxResults = parseInt(input.maxResults || 50, 10);
 
+// Novos parâmetros configuráveis
+const adType = (input.adType || 'ACTIVE').toUpperCase();
+const language = (input.language || 'en').toLowerCase();
+
+// Datas de filtragem
+const startDate = input.startDate || '2018-01-01';
+const endDate = input.endDate || new Date().toISOString().split('T')[0];
+
 if (!keyword) {
     log.error('❌ No keyword provided - exiting.');
     await Actor.setValue('ERROR', { message: 'keyword is required' });
     await Actor.exit({ exitCode: 1 });
 }
 
-const searchUrl = `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all`;
+// Construir URL de busca com todos os filtros
+const searchUrl = `https://www.facebook.com/ads/library/?active_status=${adType}&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all&language=${language}&start_date=${startDate}&end_date=${endDate}`;
 
-log.info(`🔍 Searching Facebook Ads Library for: "${keyword}" (country=${country})`);
+log.info(`🔍 Searching Facebook Ads Library for: "${keyword}" (country=${country}, adType=${adType}, language=${language}, from=${startDate} to=${endDate})`);
 log.info(`Search URL: ${searchUrl}`);
 
 const requestQueue = await RequestQueue.open();
 await requestQueue.addRequest({ url: searchUrl });
 
-// Função principal
+// Função de tratamento da página
 const handlePage = async ({ page, request }) => {
     log.info(`Processing ${request.url}`);
 
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(4000);
 
-    // Espera até os blocos de anúncios carregarem
-    await page.waitForSelector('div.x1lliihq', { timeout: 30000 }).catch(() => log.warning('⚠️ No ad containers found.'));
+    // Espera até que blocos de anúncio possíveis existam
+    await page.waitForSelector('div.x1lliihq', { timeout: 30000 }).catch(() => {
+        log.warning('⚠️ No ad containers found with default selector.');
+    });
 
     let collected = [];
     let lastHeight = await page.evaluate(() => document.body.scrollHeight);
 
+    // rolar e coletar anúncios
     for (let scroll = 0; scroll < 10 && collected.length < maxResults; scroll++) {
-        // Extrai anúncios da página atual
         const ads = await page.evaluate(() => {
             const items = [];
-            const nodes = document.querySelectorAll('div.x1lliihq.x6ikm8r.x10wlt62'); // container principal
+            const nodes = document.querySelectorAll('div.x1lliihq.x6ikm8r.x10wlt62');
 
             nodes.forEach((el) => {
                 try {
@@ -64,20 +75,20 @@ const handlePage = async ({ page, request }) => {
                             snapshot
                         });
                     }
-                } catch (err) {}
+                } catch (err) {
+                    // falhar silenciosamente em casos de erro no elemento
+                }
             });
 
             return items;
         });
 
-        // Deduplicar resultados
         for (const ad of ads) {
             if (!collected.find(a => a.text === ad.text && a.pageName === ad.pageName)) {
                 collected.push(ad);
             }
         }
 
-        // Scroll para carregar mais anúncios
         await page.evaluate(() => window.scrollBy(0, window.innerHeight * 1.5));
         await page.waitForTimeout(1500);
 
@@ -86,14 +97,16 @@ const handlePage = async ({ page, request }) => {
         lastHeight = newHeight;
     }
 
-    // Limitar ao máximo configurado
     collected = collected.slice(0, maxResults);
 
-    // Push para dataset
     for (const [index, ad] of collected.entries()) {
         await Actor.pushData({
             keyword,
             country,
+            adType,
+            language,
+            startDate,
+            endDate,
             rank: index + 1,
             page_name: ad.pageName,
             text: ad.text,
@@ -107,7 +120,7 @@ const handlePage = async ({ page, request }) => {
     log.info(`✅ Pushed ${collected.length} ads for "${keyword}".`);
 };
 
-// Configuração do Crawler
+// Configuração do crawler
 const crawler = new PlaywrightCrawler({
     requestQueue,
     maxConcurrency: 1,
