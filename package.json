@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "apify": "^3.1.0",
+    "crawlee": "^3.9.2",
     "playwright": "^1.48.0",
     "axios": "^1.7.3",
     "cheerio": "^1.0.0-rc.12"
