@@ -1,5 +1,5 @@
 import { Actor } from 'apify';
-import { PlaywrightCrawler, RequestQueue } from 'crawlee';
+import { PlaywrightCrawler, RequestQueue, log } from 'crawlee';
 
 await Actor.init();
 
@@ -9,114 +9,109 @@ const country = (input.country || 'ALL').toUpperCase();
 const maxResults = parseInt(input.maxResults || 50, 10);
 
 if (!keyword) {
-    console.log('No keyword provided - exiting.');
+    log.error('❌ No keyword provided - exiting.');
     await Actor.setValue('ERROR', { message: 'keyword is required' });
     await Actor.exit({ exitCode: 1 });
 }
 
-// Build Facebook Ads Library search URL
 const searchUrl = `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=${country}&q=${encodeURIComponent(keyword)}&search_type=keyword_unordered&media_type=all`;
 
-console.log(`Searching Facebook Ads Library for: "${keyword}" country=${country}`);
-console.log('Search URL:', searchUrl);
+log.info(`🔍 Searching Facebook Ads Library for: "${keyword}" (country=${country})`);
+log.info(`Search URL: ${searchUrl}`);
 
 const requestQueue = await RequestQueue.open();
 await requestQueue.addRequest({ url: searchUrl });
 
-// Handler principal
-const handlePage = async ({ page, request, log }) => {
+// Função principal
+const handlePage = async ({ page, request }) => {
     log.info(`Processing ${request.url}`);
-    await page.waitForTimeout(2000);
 
-    const possibleSelectors = [
-        'div[role="article"]',
-        'div[data-testid*="ad"]',
-        'div[aria-label*="Ad"]',
-        'div._7kq'
-    ];
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(4000);
 
-    let found = false;
-    for (const sel of possibleSelectors) {
-        try {
-            found = await page.$(sel) !== null;
-            if (found) break;
-        } catch {}
-    }
+    // Espera até os blocos de anúncios carregarem
+    await page.waitForSelector('div.x1lliihq', { timeout: 30000 }).catch(() => log.warning('⚠️ No ad containers found.'));
 
     let collected = [];
     let lastHeight = await page.evaluate(() => document.body.scrollHeight);
 
-    for (let i = 0; i < 8 && collected.length < maxResults; i++) {
-        const items = await page.evaluate(() => {
-            const ads = [];
-            const nodes = Array.from(document.querySelectorAll('a[href*="/ads/library/"], div[role="article"], [data-testid]'));
-            const seen = new Set();
-            nodes.forEach(n => {
+    for (let scroll = 0; scroll < 10 && collected.length < maxResults; scroll++) {
+        // Extrai anúncios da página atual
+        const ads = await page.evaluate(() => {
+            const items = [];
+            const nodes = document.querySelectorAll('div.x1lliihq.x6ikm8r.x10wlt62'); // container principal
+
+            nodes.forEach((el) => {
                 try {
-                    const linkEl = n.querySelector('a[href*="/ads/library/"]') || (n.tagName === 'A' && n.href ? n : null);
-                    const snapshot = linkEl ? linkEl.href : null;
+                    const text = el.innerText?.trim() || null;
+                    const mediaEls = el.querySelectorAll('img[src]');
+                    const media = Array.from(mediaEls).map(i => i.src);
 
-                    const titleEl = n.querySelector('h3, strong, [role="heading"]');
-                    const title = titleEl ? titleEl.innerText.trim() : null;
+                    const pageName =
+                        el.querySelector('a[role="link"] span')?.innerText?.trim() ||
+                        el.querySelector('strong span')?.innerText?.trim() ||
+                        null;
 
-                    const txtEl = n.querySelector('div[dir="auto"], p, span');
-                    const text = txtEl ? txtEl.innerText.trim().slice(0, 800) : null;
+                    const snapshot =
+                        el.querySelector('a[href*="facebook.com/ads/library/"]')?.href ||
+                        window.location.href;
 
-                    let pageName = null;
-                    const pageEl = n.querySelector('a[href*="/pages/"], a[href*="/pg/"], [aria-label*="Page"]');
-                    if (pageEl) pageName = pageEl.innerText.trim();
-
-                    const imgs = Array.from(n.querySelectorAll('img')).map(i => i.src).filter(Boolean);
-
-                    const key = snapshot || title || text || (imgs[0] || '');
-                    if (key && !seen.has(key)) {
-                        seen.add(key);
-                        ads.push({ snapshot, title, text, pageName, media: imgs });
+                    if (text || media.length) {
+                        items.push({
+                            text,
+                            media,
+                            pageName,
+                            snapshot
+                        });
                     }
-                } catch {}
+                } catch (err) {}
             });
-            return ads;
+
+            return items;
         });
 
-        for (const it of items) {
-            const exists = collected.find(x =>
-                (x.snapshot && it.snapshot && x.snapshot === it.snapshot) ||
-                (x.title && it.title && x.title === it.title)
-            );
-            if (!exists) collected.push(it);
-            if (collected.length >= maxResults) break;
+        // Deduplicar resultados
+        for (const ad of ads) {
+            if (!collected.find(a => a.text === ad.text && a.pageName === ad.pageName)) {
+                collected.push(ad);
+            }
         }
 
-        await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-        await page.waitForTimeout(1200);
+        // Scroll para carregar mais anúncios
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight * 1.5));
+        await page.waitForTimeout(1500);
 
         const newHeight = await page.evaluate(() => document.body.scrollHeight);
         if (newHeight === lastHeight) break;
         lastHeight = newHeight;
     }
 
-    for (const [index, ad] of collected.slice(0, maxResults).entries()) {
+    // Limitar ao máximo configurado
+    collected = collected.slice(0, maxResults);
+
+    // Push para dataset
+    for (const [index, ad] of collected.entries()) {
         await Actor.pushData({
             keyword,
             country,
             rank: index + 1,
-            snapshot_url: ad.snapshot,
-            title: ad.title,
-            text: ad.text,
             page_name: ad.pageName,
+            text: ad.text,
             media: ad.media,
+            snapshot_url: ad.snapshot,
             scraped_at: new Date().toISOString(),
             source_url: request.url
         });
     }
 
-    log.info(`Pushed ${collected.length} ads.`);
+    log.info(`✅ Pushed ${collected.length} ads for "${keyword}".`);
 };
 
-// Crawler Playwright (substitui BasicCrawler + launchPuppeteer)
+// Configuração do Crawler
 const crawler = new PlaywrightCrawler({
     requestQueue,
     maxConcurrency: 1,
+    requestHandlerTimeoutSecs: 300,
     launchContext: {
         launchOptions: {
             headless: true,
@@ -128,12 +123,12 @@ const crawler = new PlaywrightCrawler({
         }
     },
     requestHandler: handlePage,
-    failedRequestHandler: async ({ request, log }) => {
-        log.error(`Request ${request.url} failed after multiple retries.`);
+    failedRequestHandler: async ({ request, error }) => {
+        log.error(`❌ Request failed for ${request.url}: ${error.message}`);
     }
 });
 
 await crawler.run();
 
-console.log('Actor finished.');
+log.info('🏁 Actor finished successfully.');
 await Actor.exit();
