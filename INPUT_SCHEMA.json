@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "title": "Facebook Ads Scraper - Input schema",
-  "description": "Define os parâmetros para a execução do Facebook Ads Scraper dinâmico. Use para buscar anúncios ativos relacionados a produtos na Meta Ads Library.",
+  "description": "Define os parâmetros para a execução do Facebook Ads Scraper dinâmico. Use para buscar anúncios ativos ou inativos relacionados a produtos na Meta Ads Library, com filtros adicionais de idioma e período.",
   "type": "object",
   "properties": {
     "keyword": {
@@ -29,9 +29,9 @@
     "adType": {
       "title": "Ad Type",
       "type": "string",
-      "description": "Tipo de anúncio a buscar (ALL, ACTIVE, INACTIVE).",
-      "default": "ACTIVE",
-      "enum": ["ALL", "ACTIVE", "INACTIVE"]
+      "description": "Tipo de anúncio a buscar (active, inactive ou all).",
+      "default": "active",
+      "enum": ["active", "inactive", "all"]
     },
     "language": {
       "title": "Language",
@@ -53,6 +53,14 @@
       "description": "Data de fim para filtrar anúncios (formato YYYY-MM-DD). Por padrão, é a data atual.",
       "default": "",
       "editor": "textfield"
+    },
+    "maxKeywordTries": {
+      "title": "Maximum keyword tries",
+      "type": "integer",
+      "description": "Número máximo de keywords (ou variações) a testar quando o campo keyword for um array.",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 20
     }
   },
   "required": ["keyword"],
