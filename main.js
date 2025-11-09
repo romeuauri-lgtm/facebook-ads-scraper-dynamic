@@ -1,4 +1,4 @@
-import { Actor } from 'apify';
+import { Actor, Dataset } from 'apify';
 import { PlaywrightCrawler, RequestQueue, log } from 'crawlee';
 
 await Actor.init();
@@ -167,10 +167,13 @@ try {
 
     await crawler.run();
 
-    // Export results both to dataset and OUTPUT (for n8n run-sync)
-    await Actor.setValue('OUTPUT', { results: allResults });
+    // ✅ CORREÇÃO: garante que o OUTPUT do n8n é idêntico ao dataset completo
+    const dataset = await Dataset.open();
+    const { items } = await dataset.getData();
 
-    log.info('🏁 Actor finished successfully.');
+    await Actor.setValue('OUTPUT', items);
+    log.info(`🏁 Actor finished successfully with ${items.length} ads.`);
+
 } catch (err) {
     log.error(`💥 Fatal error: ${err.message}`);
     await Actor.setValue('ERROR', { message: err.message });
