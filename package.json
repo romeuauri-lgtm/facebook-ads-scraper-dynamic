@@ -1,7 +1,7 @@
 {
   "name": "facebook-ads-scraper-dynamic",
-  "version": "1.0.0",
-  "description": "Dynamic Facebook Ads Library scraper for product validation automation.",
+  "version": "1.0.1",
+  "description": "Dynamic Facebook Ads Library scraper for product validation automation (compatible with API and Apify UI).",
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -14,6 +14,17 @@
     "playwright": "^1.48.0",
     "axios": "^1.7.3",
     "cheerio": "^1.0.0-rc.12"
+  },
+  "apify": {
+    "actorSpecification": 1,
+    "name": "facebook-ads-scraper-dynamic",
+    "version": "1.0.1",
+    "buildTag": "latest",
+    "environmentVariables": {},
+    "dockerfile": "Dockerfile",
+    "defaultRunOptions": {
+      "build": "latest"
+    }
   },
   "engines": {
     "node": ">=20.0.0"
