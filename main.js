@@ -3,19 +3,29 @@ import { PlaywrightCrawler, RequestQueue, log } from 'crawlee';
 
 await Actor.init();
 
-const input = await Actor.getInput() || {};
-let keywords = input.keyword;
-if (!keywords || (Array.isArray(keywords) && keywords.length === 0)) {
-    log.error('❌ No keyword provided - exiting.');
+// === INPUT HANDLING ===
+let input = await Actor.getInput();
+if (!input || Object.keys(input).length === 0) {
+    // fallback for direct API call or malformed input
+    try {
+        const raw = process.env.APIFY_INPUT;
+        if (raw) input = JSON.parse(raw);
+    } catch {}
+}
+
+if (!input || !input.keyword) {
+    log.error('❌ Missing required field: "keyword"');
     await Actor.setValue('ERROR', { message: 'keyword is required' });
     await Actor.exit({ exitCode: 1 });
 }
 
-// Normaliza keywords para array
+// Normalize keywords
+let keywords = input.keyword;
 if (typeof keywords === 'string') keywords = [keywords];
 const maxKeywordTries = parseInt(input.maxKeywordTries || 5, 10);
 keywords = keywords.slice(0, maxKeywordTries);
 
+// Normalize params
 const country = (input.country || 'ALL').toUpperCase();
 const maxResults = parseInt(input.maxResults || 50, 10);
 const adType = (input.adType || 'ACTIVE').toUpperCase();
@@ -23,6 +33,7 @@ const language = (input.language || 'en').toLowerCase();
 const startDate = input.startDate || '2018-01-01';
 const endDate = input.endDate || new Date().toISOString().split('T')[0];
 
+// Initialize queue
 const requestQueue = await RequestQueue.open();
 
 for (const keyword of keywords) {
@@ -31,7 +42,7 @@ for (const keyword of keywords) {
     await requestQueue.addRequest({ url: searchUrl, userData: { keyword } });
 }
 
-// Função de tratamento da página
+// === PAGE HANDLER ===
 const handlePage = async ({ page, request }) => {
     const keyword = request.userData.keyword;
     log.info(`Processing ${request.url} (keyword="${keyword}")`);
@@ -39,7 +50,6 @@ const handlePage = async ({ page, request }) => {
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(4000);
 
-    // Seletores possíveis de anúncios
     const adSelectors = [
         'div[role="article"]',
         'div[data-testid*="ad"]',
@@ -65,7 +75,6 @@ const handlePage = async ({ page, request }) => {
                         const mediaEls = Array.from(n.querySelectorAll('img[src], video[src]'));
                         const media = mediaEls.map(m => m.src).filter(Boolean);
 
-                        // Captura robusta do nome da página
                         let pageName = null;
                         const pageSelectors = [
                             'a[href*="/pages/"]',
@@ -95,7 +104,6 @@ const handlePage = async ({ page, request }) => {
                     } catch {}
                 });
             });
-
             return items;
         }, adSelectors);
 
@@ -136,18 +144,14 @@ const handlePage = async ({ page, request }) => {
     log.info(`✅ Pushed ${collected.length} ads for keyword "${keyword}".`);
 };
 
-// Configuração do crawler
+// === CRAWLER CONFIG ===
 const crawler = new PlaywrightCrawler({
     requestQueue,
     maxConcurrency: 1,
     launchContext: {
         launchOptions: {
             headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage'
-            ]
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         }
     },
     requestHandler: handlePage,
@@ -156,7 +160,14 @@ const crawler = new PlaywrightCrawler({
     }
 });
 
-await crawler.run();
-
-log.info('🏁 Actor finished successfully.');
-await Actor.exit();
+// Run
+try {
+    await crawler.run();
+    await Actor.setValue('OUTPUT', { status: 'success', keywords, country });
+    log.info('🏁 Actor finished successfully.');
+} catch (err) {
+    log.error(`💥 Fatal error: ${err.message}`);
+    await Actor.setValue('ERROR', { message: err.message });
+} finally {
+    await Actor.exit();
+}
