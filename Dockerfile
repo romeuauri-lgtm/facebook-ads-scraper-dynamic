@@ -12,6 +12,7 @@ USER root
 RUN mkdir -p /usr/src/app/node_modules && chown -R root:root /usr/src/app
 
 # Instala dependências
+RUN npm cache clean --force && chmod -R 777 /usr/src/app
 RUN npm install --omit=dev
 
 # Instala navegadores Playwright (Chromium, Firefox, WebKit)
