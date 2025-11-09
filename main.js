@@ -6,7 +6,6 @@ await Actor.init();
 // === INPUT HANDLING ===
 let input = await Actor.getInput();
 if (!input || Object.keys(input).length === 0) {
-    // fallback for direct API call or malformed input
     try {
         const raw = process.env.APIFY_INPUT;
         if (raw) input = JSON.parse(raw);
@@ -163,7 +162,6 @@ const crawler = new PlaywrightCrawler({
 // Run
 try {
     await crawler.run();
-    await Actor.setValue('OUTPUT', { status: 'success', keywords, country });
     log.info('🏁 Actor finished successfully.');
 } catch (err) {
     log.error(`💥 Fatal error: ${err.message}`);
