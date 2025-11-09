@@ -168,4 +168,3 @@ try {
     await Actor.setValue('ERROR', { message: err.message });
 } finally {
     await Actor.exit();
-}
