@@ -6,8 +6,8 @@
   "properties": {
     "keyword": {
       "title": "Keyword",
-      "type": "string",
-      "description": "Nome do produto ou termo de pesquisa exato a ser usado na Meta Ads Library.",
+      "type": ["string", "array"],
+      "description": "Nome do produto ou termo de pesquisa exato (ou lista de termos) a ser usado na Meta Ads Library.",
       "prefill": "massage gun",
       "editor": "textfield"
     },
