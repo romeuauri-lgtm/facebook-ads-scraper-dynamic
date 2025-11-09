@@ -141,27 +141,35 @@ const handlePage = async ({ page, request }) => {
     }
 
     log.info(`✅ Pushed ${collected.length} ads for keyword "${keyword}".`);
+    return collected;
 };
 
-// === CRAWLER CONFIG ===
-const crawler = new PlaywrightCrawler({
-    requestQueue,
-    maxConcurrency: 1,
-    launchContext: {
-        launchOptions: {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        }
-    },
-    requestHandler: handlePage,
-    failedRequestHandler: async ({ request, error }) => {
-        log.error(`❌ Request failed for ${request.url}: ${error?.message || error}`);
-    }
-});
-
 // === RUN ===
+let allResults = [];
 try {
+    const crawler = new PlaywrightCrawler({
+        requestQueue,
+        maxConcurrency: 1,
+        launchContext: {
+            launchOptions: {
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            }
+        },
+        requestHandler: async (context) => {
+            const data = await handlePage(context);
+            allResults.push(...data);
+        },
+        failedRequestHandler: async ({ request, error }) => {
+            log.error(`❌ Request failed for ${request.url}: ${error?.message || error}`);
+        }
+    });
+
     await crawler.run();
+
+    // Export results both to dataset and OUTPUT (for n8n run-sync)
+    await Actor.setValue('OUTPUT', { results: allResults });
+
     log.info('🏁 Actor finished successfully.');
 } catch (err) {
     log.error(`💥 Fatal error: ${err.message}`);
