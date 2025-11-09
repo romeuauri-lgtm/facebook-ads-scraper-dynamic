@@ -159,7 +159,7 @@ const crawler = new PlaywrightCrawler({
     }
 });
 
-// Run
+// === RUN ===
 try {
     await crawler.run();
     log.info('🏁 Actor finished successfully.');
@@ -168,3 +168,4 @@ try {
     await Actor.setValue('ERROR', { message: err.message });
 } finally {
     await Actor.exit();
+}
